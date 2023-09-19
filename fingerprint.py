@@ -22,10 +22,10 @@ class Fingerprint:
     '''Inicialize'''
     def __init__(self, filename):
         self.df = pd.read_excel(filename, sheet_name=None)
-        self.D = np.array(self.df['a_fonte(D)'].values)
-        self.E = np.array(self.df['a_fonte(E)'].values)
-        self.L = np.array(self.df['a_fonte(L)'].values)
-        self.Y = np.array(self.df['Sedimentos(Y)'].values)
+        self.CB = np.array(self.df['g_Source(CB)'].values)
+        self.UR = np.array(self.df['g_Source(UR)'].values)
+        self.CF = np.array(self.df['g_Source(CF)'].values)
+        self.Y = np.array(self.df['Sediment(Y)'].values)
         self.Si = np.linalg.inv(np.cov(self.Y.T))
         return None
         
@@ -36,6 +36,13 @@ class Fingerprint:
             print ("Columns:", self.df[key].columns.tolist())
             print ("Number of samples:", self.df[key].shape[0])
             print("--")
+            
+    def nsample(self,ns):
+        ns=[]
+        for key in self.df:
+            nsa =self.df[key].shape[0]
+            ns.append(nsa)
+        return np.array(ns)            
     
     def means(self):
         for key in list(self.df):
@@ -63,7 +70,10 @@ class Fingerprint:
         
     '''
     ----------------------------------------------------------------
-    SOLVERS OPTIONS: Solvers for the sobredetermined 
+    SOLVERS OPTIONS: To solve the overdetermined linear system of equations by least squares method
+    1) OLS - ordinary least squares = solve_ols_4x4 (solve_ols_2x2 or solve_minimize2)
+    2) GLS - generalized least squares = solve_gls_4x4
+                    
     ----------------------------------------------------------------
     '''
     def solve_clarke2016(self,y,d,e,l, normalize=True):
@@ -269,16 +279,17 @@ class Fingerprint:
         plt.show()
 
 
+
     '''
-    Randomly takes a subset of samples from the defined number 
-    of elements of each sample set
+  Subset random: It randomly chooses, without repetition, the samples from each subset.
     '''
-    def randon_choice(self, nY, nD, nE, nL):
+    def randon_choice(self, nY, nCB, nUR, nCF):
         Ys = self.Y[np.random.choice(len(self.Y), nY, replace=False)] 
-        Ds = self.D[np.random.choice(len(self.D), nD, replace=False)] 
-        Es = self.E[np.random.choice(len(self.E), nE, replace=False)] 
-        Ls = self.L[np.random.choice(len(self.L), nL, replace=False)] 
-        return Ys,Ds,Es,Ls
+        CBs = self.CB[np.random.choice(len(self.CB), nCB, replace=False)] 
+        URs = self.UR[np.random.choice(len(self.UR), nUR, replace=False)] 
+        CFs = self.CF[np.random.choice(len(self.CF), nCF, replace=False)] 
+        return Ys,CBs,URs,CFs
+
 
     '''
     Run
@@ -330,30 +341,30 @@ class Fingerprint:
     
 
         
-    def multi_runs(self, n, nY,nD,nE,nL):
+    def multi_runs(self, n, nY,nCB,nUR,nCF, plots2D=[]):
         from scipy.spatial import ConvexHull
         cv = lambda x: np.std(x) / np.mean(x) *100
         
-	#repete a simulação n vezes variando nY
+	##repeat the simulation n times varying nY, nCB, nUR and nCF
         CVs_0= []; CVs_1= []; CVs_2= []; CVs_m= []
-        areas_medias_0 = []; areas_medias_1 = []; areas_medias_2 = []; 
+        areas_mean_0 = []; areas_mean_1 = []; areas_mean_2 = []; 
         infos_0 = []; infos_1 = []; infos_2 = []; 
-        areas_medias_m = []
+        areas_mean_m = []
         
         if isinstance(nY, list):
             samples_sizes = nY.copy()
             #self.Si = np.linalg.inv(np.cov(self.Y.T))
             idx = 0
-        if isinstance(nD, list):
-            samples_sizes = nD.copy()
+        if isinstance(nCB, list):
+            samples_sizes = nCB.copy()
             #self.Si = np.linalg.inv(np.cov(self.D.T))
             idx = 1
-        if isinstance(nE, list):
-            samples_sizes = nE.copy()
+        if isinstance(nUR, list):
+            samples_sizes = nUR.copy()
             #self.Si = np.linalg.inv(np.cov(self.E.T))
             idx = 2
-        if isinstance(nL, list):
-            samples_sizes = nL.copy()
+        if isinstance(nCF, list):
+            samples_sizes = nCF.copy()
             #self.Si = np.linalg.inv(np.cov(self.L.T))
             idx = 3
 
@@ -361,67 +372,82 @@ class Fingerprint:
         for ss in samples_sizes:
     	    areas_0 = []; areas_1 = []; areas_2 = []
     	    
-    	    # define quem vai variar
+    	    # Choosing the source or sediment to reduce the number of samples
     	    if idx == 0: 
     	        nY = ss
     	    if idx == 1: 
-    	        nD = ss    
+    	        nCB = ss    
     	    if idx == 2: 
-    	        nE = ss 
+    	        nUR = ss 
     	    if idx == 3: 
-    	        nL = ss 
+    	        nCF = ss 
     
     	    print('Sample size:', ss)
     	    for i in range(n):
-                Ys,Ds,Es,Ls = self.randon_choice(nY, nD, nE, nL) 
-                nSamples = nY*nD*nE*nL
+                Ys,CBs,URs,CFs = self.randon_choice(nY, nCB, nUR, nCF) 
+                nSamples = nY*nCB*nUR*nCF
                 #Ymean = Ys.mean(axis=0)
         
                 # Solve = 0 
-                P_0 = self.run(Ys,Ds,Es,Ls, solve=0)
+                P_0 = self.run(Ys,CBs,URs,CFs, solve=0)
                 P_0 = self.confidence_region(P_0, p = 95)
                 points_0 = P_0.T   
                 hull_0 = ConvexHull(points_0)
                 areas_0.append(hull_0.volume)
+              
 
                 # Solve = 1 
-                P_1 = self.run(Ys,Ds,Es,Ls, solve=1)
+                P_1 = self.run(Ys,CBs,URs,CFs, solve=1)
                 P_1 = self.confidence_region(P_1, p = 95)
                 points_1 = P_1.T   
                 hull_1 = ConvexHull(points_1)
                 areas_1.append(hull_1.volume)
         
                 # Solve = 2 
-                P_2 = self.run(Ys,Ds,Es,Ls, solve=2)
+                P_2 = self.run(Ys,CBs,URs,CFs, solve=2)
                 P_2 = self.confidence_region(P_2, p = 95)
                 points_2 = P_2.T   
                 hull_2 = ConvexHull(points_2)
                 areas_2.append(hull_2.volume)
-
+                
+            #choose which reduction to print figure ###   
+    	    if ss in plots2D:
+    	        self.plot2D(P_0, mean=True, convex_hull = True, title = "Confidence region 95% _OLS_Clarke Model")
+    	        self.plot2D(P_2, mean=True, convex_hull = True, title = "Confidence region 95% _GLS_Clarke Model")
+         ###### #####
+        
+            
     	    infos_0.append([ss, np.mean(areas_0),np.std(areas_0), nSamples, \
     	                    len(points_0), np.mean(P_0[0]), np.mean(P_0[1]), \
     	                    1-np.mean(P_0[0])- np.mean(P_0[1])])
+            
     	    infos_1.append([ss, np.mean(areas_1),np.std(areas_1), nSamples, \
     	                    len(points_1), np.mean(P_1[0]), np.mean(P_1[1]), \
     	                    1-np.mean(P_1[0])- np.mean(P_1[1])])
+            
     	    infos_2.append([ss, np.mean(areas_2),np.std(areas_2), nSamples, \
     	                    len(points_2), np.mean(P_2[0]), np.mean(P_2[1]), \
     	                    1-np.mean(P_2[0])- np.mean(P_2[1])])
         
     	    CVs_0.append(cv(areas_0))
-    	    areas_medias_0.append(np.mean(areas_0))
+    	    areas_mean_0.append(np.mean(areas_0))
 
     	    CVs_1.append(cv(areas_1))
-    	    areas_medias_1.append(np.mean(areas_1))
+    	    areas_mean_1.append(np.mean(areas_1))
     
     	    CVs_2.append(cv(areas_2))
-    	    areas_medias_2.append(np.mean(areas_2))
-    
-        print("Done!")
-        
-        self.report(infos_0, CVs_0, areas_medias_0)
-        self.report(infos_1, CVs_1, areas_medias_1)
-        self.report(infos_2, CVs_2, areas_medias_2)
+    	    areas_mean_2.append(np.mean(areas_2))
+        print('--------------------------------------------------------------')
+        print('Solve_0')
+        self.report(infos_0, CVs_0, areas_mean_0)
+        print('--------------------------------------------------------------')
+        print('Solve_1')
+        self.report(infos_1, CVs_1, areas_mean_1)
+        print('--------------------------------------------------------------')
+        print('Solve_2')
+        self.report(infos_2, CVs_2, areas_mean_2)
+        print('--------------------------------------------------------------')
+        print("Next step: Figure")
         return (CVs_0,CVs_1, CVs_2)
         
        
